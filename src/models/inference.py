@@ -76,8 +76,9 @@ class AnomalyDetector:
         self.model.to(self.device)
         self.model.eval()
 
-        # Anomaly threshold
-        self.threshold = threshold or settings.anomaly_threshold
+        # Anomaly threshold: prioritize argument, then checkpoint, then settings fallback
+        ckpt_threshold = self.checkpoint.get("threshold")
+        self.threshold = threshold or ckpt_threshold or settings.anomaly_threshold
         self.seq_len = config.get("seq_len", 60)
 
         # AMP for GPU inference

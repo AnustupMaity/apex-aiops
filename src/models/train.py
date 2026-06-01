@@ -352,7 +352,13 @@ def train_model(
     table.add_row("Model Saved To", str(save_path))
     console.print(table)
 
+    # Compute threshold from training reconstruction errors
     console.print(f"[bold green]✅ Anomaly threshold (μ + 3σ): {threshold:.8f}[/]")
+
+    # Re-save the best checkpoint with the newly calculated threshold included
+    final_checkpoint = torch.load(save_path, weights_only=True)
+    final_checkpoint["threshold"] = threshold
+    torch.save(final_checkpoint, save_path)
 
     return {
         "best_val_loss": best_val_loss,
