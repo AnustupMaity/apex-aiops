@@ -8,35 +8,49 @@ Instead of waiting for users to complain about slow dashboards or waiting for DB
 
 ---
 
-## 💡 What exactly does it do?
+## 💡 What exactly does it do? (In Easy Words)
 
-1. **Monitors Live Traffic:** A telemetry daemon continuously pulls real-time database metrics (CPU usage, execution times, cache hit ratios, sequential scans) from your Supabase PostgreSQL instance.
-2. **Predicts Degradation:** A locally-trained **Deep Learning PyTorch BiLSTM** autoencoder analyzes this telemetry stream. If it detects a query degrading in performance over time (an anomaly), it triggers an alert.
-3. **Reasons & Optimizes:** The system spins up a **LangGraph** multi-agent workflow. An AI agent (powered by a local **Ollama Qwen2.5-Coder** model, or falling back to a free-tier chain of **Gemini → Groq → DeepSeek**) reads the database schema and rewrites the slow SQL query or recommends a new `CREATE INDEX` statement.
-4. **Safely Validates:** Before applying *any* changes, the agent uses the **Model Context Protocol (MCP)** and **HypoPG** to safely simulate the index against the real production schema and calculate the exact performance speedup (Total Cost reduction).
-5. **Learns & Adapts:** If the index is proven to work, the system logs the incident to the Next.js dashboard and later automatically re-trains its BiLSTM model on the newly optimized traffic patterns via an **Active Learning Loop**.
+Imagine your database is a busy restaurant kitchen. 
+1. **The Watcher:** Project Apex acts like a kitchen manager constantly watching how long it takes to cook meals (database queries).
+2. **The Alarm:** If a specific meal suddenly starts taking 10x longer to cook than it normally does, the manager sounds an alarm.
+3. **The AI Chef:** An Artificial Intelligence (Ollama / Gemini) is immediately called in. It looks at the recipe (SQL query) and figures out a shortcut to cook it faster (like building a new database index).
+4. **The Sandbox Test:** Before telling the actual cooks to change the recipe, the AI simulates the shortcut in a virtual sandbox to prove mathematically that it works and won't ruin the kitchen.
+5. **The Fix:** If it works, it saves the fix and reports it to your live Dashboard. Over time, the AI automatically studies these fixes to get even smarter!
 
 ---
 
-## 🏗️ Architecture
+## 🧪 How to Test This App
+
+Once the Python Daemon (`python daemon.py`) and Next.js Dashboard (`npm run dev`) are both running, your dashboard will likely sit quietly because your database is currently healthy! 
+
+To force the AI to spring into action, open a new PowerShell terminal and run this command to inject a **fake slow query** into the system:
+
+```powershell
+Invoke-RestMethod -Uri http://localhost:8000/api/trigger -Method Post -ContentType "application/json" -Body '{"query": "SELECT * FROM orders JOIN customers ON orders.customer_id = customers.id", "baseline_exec_ms": 10.0, "current_exec_ms": 850.0}'
+```
+
+Watch your `http://localhost:3000` dashboard! You will see the AI detect the anomaly, rewrite the query, propose an index, and simulate the speedup live on your screen.
+
+---
+
+## 🏗️ Architecture Flowchart
 
 ```mermaid
 graph TD
-    A["Supabase DB"] -->|Live Telemetry| B["Telemetry Collector"]
-    B -->|Time-Series Data| C["PyTorch BiLSTM (Anomaly Detector)"]
-    C -->|Spike Detected!| D["PydanticAI (Validation)"]
-    D -->|Validated Report| E["LangGraph (Multi-Agent Orchestrator)"]
+    A["Your Database"] -->|Live Speed Stats| B["Telemetry Collector"]
+    B -->|Time-Series Data| C["AI Watcher (PyTorch)"]
+    C -->|Slow Query Detected!| D["Data Checker (PydanticAI)"]
+    D -->|Validated Report| E["AI Manager (LangGraph)"]
     
-    E -->|Route: Local| F["Ollama Qwen2.5-Coder 1.5b"]
-    E -->|Route: Cloud| G["Fallback Chain<br/>(Gemini → Groq → DeepSeek)"]
+    E -->|Simple Fixes| F["Local AI (Ollama)"]
+    E -->|Complex Fixes| G["Cloud AI (Gemini/DeepSeek)"]
     
-    F --> H["MCP + HypoPG<br/>(Virtual Index Validation)"]
+    F --> H["Virtual Sandbox (HypoPG)"]
     G --> H
     
-    H -->|Performance Speedup| E
-    E -->|Log Incident| I["Next.js Real-time Dashboard"]
-    I -->|Resolved Incidents| J["Active Learning (Weekly Retraining)"]
-    J -->|Updated Weights| C
+    H -->|Speedup Proven| E
+    E -->|Save Fix| I["Live Dashboard (Next.js)"]
+    I -->|Weekly Retraining| C
 ```
 
 ---
