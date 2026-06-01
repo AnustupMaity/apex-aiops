@@ -13,6 +13,7 @@ from __future__ import annotations
 import time
 from pathlib import Path
 from typing import Optional
+import subprocess
 
 import numpy as np
 import torch
@@ -90,6 +91,13 @@ def train_model(
     console.print(f"\n[bold cyan]🚀 Project Apex — BiLSTM Training[/]")
     console.print(f"   Device: {device} | AMP: {use_amp}")
 
+    # ── CUDA Performance Optimizations ────────────────────────
+    if device.type == "cuda":
+        torch.backends.cudnn.benchmark = True  # Auto-tune convolution algorithms
+        torch.backends.cuda.matmul.allow_tf32 = True  # Use TF32 for matmuls
+        torch.backends.cudnn.allow_tf32 = True  # Use TF32 for cuDNN
+        console.print("   [green]⚡ cuDNN benchmark + TF32 enabled[/]")
+
     # Check for Ollama running (VRAM conflict warning)
     if device.type == "cuda":
         try:
@@ -163,6 +171,21 @@ def train_model(
     # ── Training Loop ─────────────────────────────────────────
     console.print(f"\n[bold]🏋️ Training for up to {settings.num_epochs} epochs...[/]")
 
+    def get_gpu_util() -> float:
+        try:
+            out = subprocess.check_output(
+                ["nvidia-smi", "--query-gpu=utilization.gpu", "--format=csv,noheader,nounits"],
+                encoding="utf-8"
+            )
+            return float(out.strip())
+        except Exception:
+            return 0.0
+
+    # Push datasets to GPU once to bypass all CPU bottlenecks
+    if device.type == "cuda":
+        train_loader.dataset.windows_tensor = train_loader.dataset.windows_tensor.to(device)
+        val_loader.dataset.windows_tensor = val_loader.dataset.windows_tensor.to(device)
+
     with Progress(
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
@@ -177,6 +200,12 @@ def train_model(
         epoch_task = progress.add_task(
             "[cyan]Epochs", total=settings.num_epochs
         )
+        
+        # We know num_samples=252388, bs=512 -> ~493 batches
+        # We'll dynamically set the total inside the epoch
+        batch_task = progress.add_task(
+            "[magenta]Batches (GPU: 0%)", total=100
+        )
 
         for epoch in range(settings.num_epochs):
             # ── Train Phase ───────────────────────────────────
@@ -186,9 +215,25 @@ def train_model(
 
             optimizer.zero_grad()
 
-            for batch_idx, (inputs, targets) in enumerate(train_loader):
-                inputs = inputs.to(device, non_blocking=True)
-                targets = targets.to(device, non_blocking=True)
+            # Pure GPU batching (Bypasses DataLoader completely)
+            dataset_tensor = train_loader.dataset.windows_tensor
+            num_samples = len(dataset_tensor)
+            bs = settings.batch_size
+            
+            # Fast shuffle on GPU
+            indices = torch.randperm(num_samples, device=device)
+            total_batches = (num_samples + bs - 1) // bs
+            progress.reset(batch_task, total=total_batches)
+
+            for batch_idx, start_idx in enumerate(range(0, num_samples, bs)):
+                # Update GPU usage every 50 batches to avoid subprocess overhead
+                if batch_idx % 50 == 0:
+                    gpu_usage = get_gpu_util()
+                    progress.update(batch_task, description=f"[magenta]Batches (GPU: {gpu_usage:.0f}%)")
+                    
+                batch_indices = indices[start_idx:start_idx + bs]
+                inputs = dataset_tensor[batch_indices]
+                targets = inputs
 
                 # Forward pass with AMP
                 if use_amp:
@@ -214,6 +259,7 @@ def train_model(
 
                 epoch_train_loss += loss.item() * accumulation_steps
                 num_batches += 1
+                progress.advance(batch_task)
 
             avg_train_loss = epoch_train_loss / max(num_batches, 1)
             train_losses.append(avg_train_loss)
@@ -223,10 +269,13 @@ def train_model(
             epoch_val_loss = 0.0
             num_val_batches = 0
 
+            val_tensor = val_loader.dataset.windows_tensor
+            val_samples = len(val_tensor)
+            
             with torch.no_grad():
-                for inputs, targets in val_loader:
-                    inputs = inputs.to(device, non_blocking=True)
-                    targets = targets.to(device, non_blocking=True)
+                for start_idx in range(0, val_samples, bs):
+                    inputs = val_tensor[start_idx:start_idx + bs]
+                    targets = inputs
 
                     if use_amp:
                         with torch.amp.autocast("cuda"):
@@ -286,18 +335,23 @@ def train_model(
     # ── Training Summary ──────────────────────────────────────
     elapsed = time.time() - start_time
 
-    table = Table(title="Training Summary", show_header=True)
+    # Compute threshold and detailed metrics
+    metrics = _compute_threshold(model, train_loader, device, use_amp)
+    threshold = metrics["threshold"]
+    
+    table = Table(title="Training Summary & Evaluation Metrics", show_header=True)
     table.add_column("Metric", style="cyan")
     table.add_column("Value", style="green")
     table.add_row("Total Epochs", str(len(train_losses)))
+    table.add_row("Training Time", f"{elapsed:.1f}s")
     table.add_row("Best Val Loss", f"{best_val_loss:.8f}")
     table.add_row("Final Train Loss", f"{train_losses[-1]:.8f}")
-    table.add_row("Training Time", f"{elapsed:.1f}s")
+    table.add_row("Mean Absolute Error (MAE)", f"{metrics['mae']:.8f}")
+    table.add_row("Mean Squared Error (MSE)", f"{metrics['mean_mse']:.8f}")
+    table.add_row("Max Reconstruction Error", f"{metrics['max_error']:.8f}")
     table.add_row("Model Saved To", str(save_path))
     console.print(table)
 
-    # Compute threshold from training reconstruction errors
-    threshold = _compute_threshold(model, train_loader, device, use_amp)
     console.print(f"[bold green]✅ Anomaly threshold (μ + 3σ): {threshold:.8f}[/]")
 
     return {
@@ -305,6 +359,7 @@ def train_model(
         "train_losses": train_losses,
         "val_losses": val_losses,
         "threshold": threshold,
+        "metrics": metrics,
         "model_path": str(save_path),
         "elapsed_seconds": elapsed,
     }
@@ -315,30 +370,42 @@ def _compute_threshold(
     train_loader,
     device: torch.device,
     use_amp: bool,
-) -> float:
+) -> dict:
     """
-    Compute anomaly threshold as mean + 3 * std of training
-    reconstruction errors.
+    Compute anomaly threshold and detailed evaluation metrics.
+    Uses pure GPU slicing to match training speeds.
     """
     model.eval()
     all_errors = []
+    
+    dataset_tensor = train_loader.dataset.windows_tensor
+    num_samples = len(dataset_tensor)
+    bs = 2048
 
     with torch.no_grad():
-        for inputs, _ in train_loader:
-            inputs = inputs.to(device, non_blocking=True)
-
+        for start_idx in range(0, num_samples, bs):
+            inputs = dataset_tensor[start_idx:start_idx + bs]
             if use_amp:
                 with torch.amp.autocast("cuda"):
                     errors = model.get_reconstruction_error(inputs)
             else:
                 errors = model.get_reconstruction_error(inputs)
+            all_errors.append(errors)
 
-            all_errors.append(errors.cpu().numpy())
+    all_errors = torch.cat(all_errors)
+    mean_err = all_errors.mean().item()
+    std_err = all_errors.std().item()
+    max_err = all_errors.max().item()
+    mae = all_errors.abs().mean().item()
+    threshold = mean_err + 3 * std_err
 
-    all_errors = np.concatenate(all_errors)
-    threshold = float(np.mean(all_errors) + 3.0 * np.std(all_errors))
-
-    return threshold
+    return {
+        "threshold": threshold,
+        "mean_mse": mean_err,
+        "std_mse": std_err,
+        "max_error": max_err,
+        "mae": mae,
+    }
 
 
 if __name__ == "__main__":

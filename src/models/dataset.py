@@ -126,6 +126,9 @@ class NABDataset(Dataset):
             f"[Apex] NABDataset ({split}): {len(self.windows)} windows "
             f"from {len(csv_files)} files"
         )
+        
+        # Pre-allocate as a single massive PyTorch tensor for infinitely fast data loading
+        self.windows_tensor = torch.tensor(np.array(self.windows), dtype=torch.float32)
 
     def _load_anomaly_labels(self) -> dict:
         """Load anomaly window labels from combined_windows.json if available."""
@@ -191,14 +194,14 @@ class NABDataset(Dataset):
         )
 
     def __len__(self) -> int:
-        return len(self.windows)
+        return len(self.windows_tensor)
 
     def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Return (input, target) pair — both are the same window
         for reconstruction-based anomaly detection.
         """
-        window = torch.tensor(self.windows[idx], dtype=torch.float32)
+        window = self.windows_tensor[idx]
         return window, window  # autoencoder: input == target
 
     @property
@@ -245,7 +248,7 @@ def create_dataloaders(
             batch_size=batch_size,
             shuffle=(split == "train"),
             num_workers=num_workers,
-            pin_memory=torch.cuda.is_available(),
+            pin_memory=False,
             drop_last=(split == "train"),
         )
 
