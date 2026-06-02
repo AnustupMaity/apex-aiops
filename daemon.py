@@ -222,7 +222,7 @@ async def trigger_anomaly(data: dict):
         "affected_query": data.get("query", "SELECT 1"),
         "baseline_exec_ms": data.get("baseline_exec_ms", 10.0),
         "current_exec_ms": data.get("current_exec_ms", 500.0),
-        "source_metrics": {},
+        "source_metrics": {"is_simulated": True},
         "query_id": str(uuid4()),
     }
 

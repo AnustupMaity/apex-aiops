@@ -52,6 +52,9 @@ def validate_node(state: ApexGraphState) -> dict[str, Any]:
         }
 
     except Exception as e:
+        print(f"[Apex] validate_node exception: {e}")
+        import traceback
+        traceback.print_exc()
         return {
             "anomaly_report": None,
             "severity": "low",
@@ -113,6 +116,9 @@ def reason_node(state: ApexGraphState) -> dict[str, Any]:
         }
 
     except Exception as e:
+        print(f"[Apex] reason_node exception: {e}")
+        import traceback
+        traceback.print_exc()
         return {
             "optimized_query": affected_query,
             "optimization_reasoning": f"Optimization failed: {str(e)}",
@@ -223,6 +229,16 @@ def log_node(state: ApexGraphState) -> dict[str, Any]:
                 return getattr(anomaly_report, key, default)
             return default
 
+        is_simulated = False
+        if hasattr(anomaly_report, "get"):
+            is_simulated = anomaly_report.get("source_metrics", {}).get("is_simulated", False)
+        elif hasattr(anomaly_report, "source_metrics"):
+            is_simulated = getattr(anomaly_report, "source_metrics", {}).get("is_simulated", False)
+            
+        model_used = state.get("model_used", "")
+        if is_simulated:
+            model_used = "[TEST] " + model_used
+
         record = {
             "incident_id": state.get("incident_id", str(uuid4())),
             "severity": state.get("severity", "low"),
@@ -238,7 +254,7 @@ def log_node(state: ApexGraphState) -> dict[str, Any]:
             "speedup_factor": state.get("speedup_factor", 1.0),
             "index_recommendations": state.get("index_recommendations", []),
             "resolution": state.get("resolution", "pending"),
-            "model_used": state.get("model_used", ""),
+            "model_used": model_used,
             "langgraph_thread_id": state.get("incident_id", ""),
             "resolved_at": datetime.utcnow().isoformat(),
         }

@@ -42,7 +42,7 @@ def extract_table_names(sql: str) -> list[str]:
     Returns:
         List of unique table names found in the query.
     """
-    tables: set[str] = []
+    tables: set[str] = set()
 
     # Parse SQL
     try:

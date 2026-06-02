@@ -1,140 +1,122 @@
-#  Project Apex
+# 🚀 Project Apex: Autonomous Database Engine
 
-### Autonomous Database Performance Tuning & Guardrail Engine
+Project Apex is an advanced, AI-driven AIOps platform that provides autonomous database monitoring, anomaly detection, and automated SQL query optimization for PostgreSQL databases (specifically built for Supabase).
 
-Project Apex is a fully autonomous **AIOps (Artificial Intelligence for IT Operations)** pipeline designed to solve one of the most expensive and complex problems in software engineering: **unoptimized database queries**. 
-
-Instead of waiting for users to complain about slow dashboards or waiting for DBAs to manually run `EXPLAIN` on production databases, Project Apex acts as an autonomous AI Database Administrator that works 24/7.
+It leverages a local orchestration pipeline built on **LangGraph**, utilizing a multi-layered AI architecture to detect inefficiencies, validate schemas, reason about SQL performance, and mathematically prove speedups via a secure Model Context Protocol (MCP) bridge.
 
 ---
 
-## 💡 What exactly does it do? (In Easy Words)
+## 🏗️ Architecture Overview
 
-Imagine your database is a busy restaurant kitchen. 
-1. **The Watcher:** Project Apex acts like a kitchen manager constantly watching how long it takes to cook meals (database queries).
-2. **The Alarm:** If a specific meal suddenly starts taking 10x longer to cook than it normally does, the manager sounds an alarm.
-3. **The AI Chef:** An Artificial Intelligence (Ollama / Gemini) is immediately called in. It looks at the recipe (SQL query) and figures out a shortcut to cook it faster (like building a new database index).
-4. **The Sandbox Test:** Before telling the actual cooks to change the recipe, the AI simulates the shortcut in a virtual sandbox to prove mathematically that it works and won't ruin the kitchen.
-5. **The Fix:** If it works, it saves the fix and reports it to your live Dashboard. Over time, the AI automatically studies these fixes to get even smarter!
+The system is cleanly decoupled into three primary services:
 
----
-
-## 🧪 How to Test This App
-
-Once the Python Daemon (`python daemon.py`) and Next.js Dashboard (`npm run dev`) are both running, your dashboard will likely sit quietly because your database is currently healthy! 
-
-To force the AI to spring into action, open a new PowerShell terminal and run this command to inject a **fake slow query** into the system:
-
-```powershell
-Invoke-RestMethod -Uri http://localhost:8000/api/trigger -Method Post -ContentType "application/json" -Body '{"query": "SELECT * FROM orders JOIN customers ON orders.customer_id = customers.id", "baseline_exec_ms": 10.0, "current_exec_ms": 850.0}'
-```
-
-Watch your `http://localhost:3000` dashboard! You will see the AI detect the anomaly, rewrite the query, propose an index, and simulate the speedup live on your screen.
+1. **The Daemon (`daemon.py`)**: A background Python process that runs a continuous telemetry loop, hosts the FastAPI orchestration endpoints, and coordinates the LangGraph AI workflows.
+2. **The MCP Bridge (`src/mcp`)**: A secure, read-only boundary that interfaces with your live Supabase PostgreSQL database. It safely executes `EXPLAIN` query plans and gathers statistical data without ever modifying production tables.
+3. **The Next.js Dashboard (`dashboard/`)**: A sleek, real-time React UI providing a visual interface for the autonomous system. It monitors metrics, visualizes detected anomalies, and traces the AI's resolution pipeline.
 
 ---
 
-## 🏗️ Architecture Flowchart
+## 🧠 AI Layers (The Orchestration Agents)
 
-```mermaid
-graph TD
-    A["Your Database"] -->|Live Speed Stats| B["Telemetry Collector"]
-    B -->|Time-Series Data| C["AI Watcher (PyTorch)"]
-    C -->|Slow Query Detected!| D["Data Checker (PydanticAI)"]
-    D -->|Validated Report| E["AI Manager (LangGraph)"]
-    
-    E -->|Simple Fixes| F["Local AI (Ollama)"]
-    E -->|Complex Fixes| G["Cloud AI (Gemini/DeepSeek)"]
-    
-    F --> H["Virtual Sandbox (HypoPG)"]
-    G --> H
-    
-    H -->|Speedup Proven| E
-    E -->|Save Fix| I["Live Dashboard (Next.js)"]
-    I -->|Weekly Retraining| C
-```
+Project Apex utilizes three distinct intelligence layers to handle anomalies safely:
 
----
+### 1. 🔬 Detection Layer (BiLSTM Autoencoder)
+- **Role**: Continuous telemetry analysis.
+- **Tech**: PyTorch, Bi-directional LSTM neural network.
+- **Function**: Monitors incoming SQL execution metrics. When a query's execution time deviates from historical patterns, the autoencoder's reconstruction error spikes above a threshold, triggering an Anomaly Report.
 
-## 🛠️ Tech Stack & Features
+### 2. 🛡️ Validation Layer (PydanticAI)
+- **Role**: Schema enforcement and data structuring.
+- **Tech**: Pydantic, FastAPI.
+- **Function**: Intercepts the raw anomaly signal and validates its shape. It ensures that the required context (original query, baseline execution time, severity) is perfectly formatted before handing it to the reasoning agent.
 
-| Layer | Technology | Key Features |
-|-------|-----------|--------------|
-| **Deep Learning** | PyTorch BiLSTM | Trained locally on the Kaggle NAB dataset. Uses Mixed Precision (AMP) and gradient accumulation to run flawlessly on 4GB VRAM (RTX 3050). |
-| **Validation** | PydanticAI | Forces the AI agents to strictly return structured JSON payloads to prevent pipeline crashes. |
-| **Orchestration** | LangGraph | A state machine that manages the logic of routing, reasoning, executing, verifying, and logging. |
-| **Reasoning (Local)** | Ollama | Runs `qwen2.5-coder:1.5b` locally for zero-latency, highly-secure SQL optimization. |
-| **Reasoning (Cloud)**| LangChain Fallbacks | A highly resilient free-tier fallback chain. If a query is too complex, it escalates to **Gemini 2.5 Flash**, falls back to **Groq (Llama 3.3 70B)**, and finally **OpenRouter (DeepSeek R1)**. |
-| **Safe Validation** | MCP + HypoPG | The AI tests its indexes using the official PostgreSQL `HypoPG` extension over an isolated RBAC connection, guaranteeing production data is never touched or cloned. |
-| **Dashboard** | Next.js 15 | A gorgeous, real-time tracking interface built with Recharts, React 19, and TailwindCSS. |
+### 3. 🤖 Reasoning & Planning Layer (Qwen2.5-Coder:1.5b via Ollama)
+- **Role**: Autonomous SQL optimization.
+- **Tech**: Ollama, LangChain, Qwen2.5.
+- **Function**: The brain of the operation. It ingests the inefficient SQL query and intelligently rewrites it (e.g., converting correlated subqueries to `EXISTS` clauses, introducing `JOIN`s, or recommending indexes).
+
+### 4. ⚙️ Execution & Verification (MCP Bridge)
+- **Role**: Mathematical proof of speedup.
+- **Tech**: PostgreSQL, psycopg.
+- **Function**: The MCP bridge runs a safe `EXPLAIN (FORMAT JSON)` on both the original query and the LLM's optimized query against your live database. It compares the `Total Cost` of both query plans. If the new query proves to be mathematically faster, it marks the incident as **Improved** and calculates the exact speedup factor (e.g., 85.0x).
 
 ---
 
-## 🚀 Quick Start Guide
+## 🛠️ Features & Use Cases
 
-### 1. Requirements & Setup
-- **Hardware:** NVIDIA GPU with 4GB+ VRAM (RTX 3050 is perfect)
-- **Software:** Python 3.10+, Node.js, and Ollama installed.
+- **Autonomous Query Optimization**: Drop a slow SQL query in, and Apex will return a mathematically verified, optimized version without human intervention.
+- **Safe Hypothetical Indexing**: Recommends database indexes and uses PostgreSQL's HypoPG extension to prove their effectiveness before you actually create them.
+- **Real-Time Telemetry Dashboard**: Watch your database health, cache hit ratios, and mean latency reduction in real-time.
+- **Incident Tracing**: Native LangSmith integration allows you to trace the exact thoughts, logic, and output of the LLM pipeline for every anomaly.
 
+---
+
+## 🚀 Getting Started
+
+### Prerequisites
+- Python 3.10+
+- Node.js 18+
+- Ollama (running locally with the `qwen2.5-coder:1.5b` model pulled)
+- A Supabase Project
+
+### 1. Database Configuration
+Copy the `.env` template and add your credentials:
 ```bash
-# Clone the repository
-git clone <your-repo-url>
-cd ML_Project
-
-# Create environment configuration
-copy .env.example .env
-# Edit .env with your Supabase, Kaggle, Gemini, Groq, and OpenRouter API keys
+SUPABASE_URL=https://<your-project>.supabase.co
+SUPABASE_DB_URL=postgresql://postgres.<tenant>:password@<pooler>:5432/postgres
+MCP_DB_URL=postgresql://apex_mcp_role.<tenant>:password@<pooler>:5432/postgres
+LANGSMITH_TRACING=true
+LANGSMITH_API_KEY=your_key
 ```
 
-### 2. Environment Preparation
+### 2. Start the Daemon (Backend)
+The daemon runs the AI orchestration, telemetry loop, and FastAPI server.
 ```bash
-# Install Python dependencies
-pip install -r requirements.txt
-
-# Setup the Supabase Schema (Installs HypoPG and configures RBAC)
-python scripts/setup_supabase_schema.py
-
-# Download the Kaggle Telemetry Training Data
-python scripts/download_datasets.py
+# From the project root:
+py daemon.py
 ```
+*Note: The daemon runs on port `8000`.*
 
-### 3. Start the Local AI
-To ensure Ollama downloads the `qwen2.5-coder` model strictly to your project folder (and keeps your C drive clean), open a PowerShell terminal and run:
-```powershell
-$env:OLLAMA_MODELS="d:\CODES\Ongoing_Projects\ML_Project\models\ollama"
-ollama serve
-```
-*Keep this terminal open.* In a new terminal, run:
+### 3. Start the Dashboard (Frontend)
+The frontend is a Next.js application. 
 ```bash
-ollama pull qwen2.5-coder:1.5b
-```
-
-### 4. Train the Brain
-Train the PyTorch BiLSTM on the local Kaggle dataset.
-```bash
-python -m src.models.train
-```
-
-### 5. Launch the Engine
-```bash
-# Start the Backend AIOps Daemon
-python daemon.py
-
-# In a new terminal, start the Next.js Dashboard
 cd dashboard
 npm install
 npm run dev
 ```
-
-Visit `http://localhost:3000` to view the live dashboard!
+*Note: The frontend runs on port `3000`.*
 
 ---
 
-## 🔒 Security & Disk Management
+## 🛑 How to Stop & Restart the Frontend
+If you need to stop the frontend dashboard (Next.js) and restart it:
 
-Project Apex is built for students and budget-conscious engineers:
-1. **Confined Downloads**: All Kaggle datasets and PyTorch model weights are strictly routed to the `/data` and `/models` folders on your D drive. Your C drive remains untouched.
-2. **RBAC Safety**: The MCP validation bridge connects to PostgreSQL using a strictly read-only role (`apex_mcp_role`). Even if the AI agent hallucinates a `DROP TABLE` command, the database engine will natively block it.
-3. **Hypothetical Indexes**: We use HypoPG to ask the query planner "What if we created this index?" without ever actually using disk space to build the index.
+1. **To Stop**: Go to the terminal window where you ran `npm run dev` and press `CTRL + C` on your keyboard. It will ask `Terminate batch job (Y/N)?`. Type `Y` and press Enter.
+2. **To Run Again**: Make sure you are in the `dashboard` directory and run:
+```bash
+npm run dev
+```
 
-## License
-MIT
+---
+
+## 🔌 API Endpoints (Daemon)
+
+The FastAPI daemon exposes the following critical endpoints:
+
+- `GET /health` : Returns system health and model loading status.
+- `GET /api/metrics` : Returns the latest telemetry baseline metrics.
+- `GET /api/incidents` : Returns a list of the most recent anomaly reports and their optimization statuses.
+- `POST /api/trigger` : Manually trigger an anomaly for testing purposes.
+  - **Payload**:
+    ```json
+    {
+      "query": "SELECT id FROM users WHERE id IN (SELECT user_id FROM orders)",
+      "baseline_exec_ms": 5.0,
+      "current_exec_ms": 500.0
+    }
+    ```
+
+---
+
+## 🔒 Security & MCP
+The Model Context Protocol (MCP) ensures that the LLM **cannot** execute arbitrary SQL or drop tables. All interaction is strictly read-only (`EXPLAIN`) and executed under a restricted PostgreSQL role (`apex_mcp_role`), providing enterprise-grade security for autonomous agents operating against production databases.
