@@ -120,3 +120,7 @@ The FastAPI daemon exposes the following critical endpoints:
 
 ## 🔒 Security & MCP
 The Model Context Protocol (MCP) ensures that the LLM **cannot** execute arbitrary SQL or drop tables. All interaction is strictly read-only (`EXPLAIN`) and executed under a restricted PostgreSQL role (`apex_mcp_role`), providing enterprise-grade security for autonomous agents operating against production databases.
+
+---
+
+Developed by Anustup Maity.
