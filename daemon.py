@@ -257,6 +257,30 @@ async def trigger_retraining():
             content={"error": str(e)},
         )
 
+@app.get("/api/settings")
+async def get_app_settings():
+    """Retrieve current application settings."""
+    settings = get_settings()
+    return settings.model_dump(exclude={"supabase_service_key", "gemini_api_key", "groq_api_key", "openrouter_api_key"})
+
+@app.post("/api/settings")
+async def update_app_settings(updates: dict):
+    """Update environment variables and reload settings."""
+    try:
+        from src.config.settings import Settings
+        Settings.update_env_file(updates)
+        
+        # Reload detector model if threshold changed (optional, but since threshold is used during scoring, reload is not strictly needed for threshold, but we do need the new settings)
+        settings = get_settings()
+        
+        return {"status": "success", "settings": settings.model_dump(exclude={"supabase_service_key", "gemini_api_key", "groq_api_key", "openrouter_api_key"})}
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={"error": str(e)},
+        )
+
+
 
 # ── Monitoring Loop ───────────────────────────────────────────
 

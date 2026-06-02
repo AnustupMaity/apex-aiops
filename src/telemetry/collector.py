@@ -87,6 +87,10 @@ class TelemetryCollector:
         self._running = False
         self._pool = None
         self._slow_queries: list[SlowQuery] = []
+        
+        # State for calculating live deltas
+        self._prev_exec_time = 0.0
+        self._prev_calls = 0
 
     async def start(self) -> None:
         """Start the async telemetry collection loop."""
@@ -159,12 +163,33 @@ class TelemetryCollector:
             total_blks = blks_hit + blks_read
             cache_ratio = blks_hit / total_blks if total_blks > 0 else 1.0
 
+            total_exec_time = float(stats_row["total_exec_time"] or 0)
+            total_calls = int(stats_row["total_calls"] or 0)
+            
+            # Calculate live mean exec time (delta over poll interval)
+            delta_exec = total_exec_time - self._prev_exec_time
+            delta_calls = total_calls - self._prev_calls
+            
+            if self._prev_calls == 0:
+                # First run, use global average
+                mean_exec_time_ms = float(stats_row["mean_exec_time_ms"] or 0)
+            elif delta_calls > 0:
+                # Active queries in this interval
+                mean_exec_time_ms = delta_exec / delta_calls
+            else:
+                # No active queries, drop to 0 to show true live state
+                mean_exec_time_ms = 0.0
+                
+            # Update state
+            self._prev_exec_time = total_exec_time
+            self._prev_calls = total_calls
+
             return TelemetrySnapshot(
                 timestamp=datetime.utcnow(),
-                total_exec_time=float(stats_row["total_exec_time"] or 0),
-                total_calls=int(stats_row["total_calls"] or 0),
+                total_exec_time=total_exec_time,
+                total_calls=total_calls,
                 rows_returned=int(stats_row["rows_returned"] or 0),
-                mean_exec_time_ms=float(stats_row["mean_exec_time_ms"] or 0),
+                mean_exec_time_ms=mean_exec_time_ms,
                 shared_blks_hit=int(blks_hit),
                 shared_blks_read=int(blks_read),
                 cache_hit_ratio=cache_ratio,

@@ -213,17 +213,25 @@ def log_node(state: ApexGraphState) -> dict[str, Any]:
     settings = get_settings()
 
     try:
-        anomaly_report = state.get("anomaly_report", {})
+        anomaly_report = state.get("anomaly_report") or {}
+        
+        # Safely get values, handling the case where anomaly_report is a dict or a Pydantic model
+        def get_val(key, default):
+            if hasattr(anomaly_report, "get"):
+                return anomaly_report.get(key, default)
+            elif hasattr(anomaly_report, key):
+                return getattr(anomaly_report, key, default)
+            return default
 
         record = {
             "incident_id": state.get("incident_id", str(uuid4())),
             "severity": state.get("severity", "low"),
-            "anomaly_score": anomaly_report.get("anomaly_score", 0.0),
-            "affected_query": anomaly_report.get("affected_query", ""),
-            "table_names": anomaly_report.get("table_names", []),
-            "baseline_exec_ms": anomaly_report.get("baseline_exec_ms", 0.0),
-            "current_exec_ms": anomaly_report.get("current_exec_ms", 0.0),
-            "degradation_factor": anomaly_report.get("degradation_factor", 1.0),
+            "anomaly_score": get_val("anomaly_score", 0.0),
+            "affected_query": get_val("affected_query", ""),
+            "table_names": get_val("table_names", []),
+            "baseline_exec_ms": get_val("baseline_exec_ms", 0.0),
+            "current_exec_ms": get_val("current_exec_ms", 0.0),
+            "degradation_factor": get_val("degradation_factor", 1.0),
             "optimized_query": state.get("optimized_query", ""),
             "original_plan": json.dumps(state.get("explain_before", {})),
             "optimized_plan": json.dumps(state.get("explain_after", {})),
