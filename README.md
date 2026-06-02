@@ -14,6 +14,37 @@ The system is cleanly decoupled into three primary services:
 2. **The MCP Bridge (`src/mcp`)**: A secure, read-only boundary that interfaces with your live Supabase PostgreSQL database. It safely executes `EXPLAIN` query plans and gathers statistical data without ever modifying production tables.
 3. **The Next.js Dashboard (`dashboard/`)**: A sleek, real-time React UI providing a visual interface for the autonomous system. It monitors metrics, visualizes detected anomalies, and traces the AI's resolution pipeline.
 
+### System Flowchart
+
+```mermaid
+graph TD
+    subgraph "Data Source"
+        DB[(Supabase PostgreSQL)] -->|Execution Metrics| T[Telemetry Collector]
+    end
+
+    subgraph "1. Detection Layer"
+        T --> BiLSTM[BiLSTM Autoencoder]
+        BiLSTM -->|Spike in Latency/Cost| Event[Trigger Anomaly]
+    end
+
+    subgraph "LangGraph Orchestration (The AI Agents)"
+        Event --> V[2. Validation Node<br/>Pydantic]
+        V -->|Structured Context| Q[3. Reasoning Node<br/>Qwen2.5-Coder]
+        
+        Q -->|Optimized SQL & Indexes| E[4. Execution Node]
+        E <-->|Run EXPLAIN via MCP| MCP[MCP Bridge]
+        
+        E -->|Return Query Costs| Ver[5. Verification Node]
+    end
+
+    subgraph "Resolution"
+        Ver -->|Speedup > 1.0x| I[Status: Improved]
+        Ver -->|Speedup = 1.0x| N[Status: No Change]
+    end
+    
+    MCP -.->|Read-Only Query Plan| DB
+```
+
 ---
 
 ## 🧠 AI Layers (The Orchestration Agents)
